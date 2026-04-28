@@ -10,11 +10,10 @@ def home_page():
 def printers_page():
     return send_from_directory(app.static_folder, "printers.html")
 
-@app.route("/printer/<int:printer_id>")
-def printer_detail(printer_id):
-    if printer_id == 1:
-        return send_from_directory(app.static_folder, "printer1.html")
-    elif printer_id == 2:
-        return send_from_directory(app.static_folder, "printer2.html")
-    abort(404)
+@app.route("/printer1")
+def printer1_detail():
+    return send_from_directory(app.static_folder, "printer1.html")
 
+@app.route("/printer2")
+def printer2_detail():
+    return send_from_directory(app.static_folder, "printer2.html")
