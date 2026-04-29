@@ -1,4 +1,4 @@
-from flask import Flask, send_from_directory, abort
+from flask import Flask, send_from_directory, render_template, abort
 
 app = Flask(__name__, static_folder='static', static_url_path='/')
 
@@ -6,12 +6,26 @@ app = Flask(__name__, static_folder='static', static_url_path='/')
 def home_page():
     return send_from_directory(app.static_folder, "index.html")
 
-@app.route("/printer/<int:printer_id>")
+@app.route("/printer_<int:printer_id>.html")
 def printer_detail(printer_id):
     if printer_id == 1:
-        return send_from_directory(app.static_folder, "printer1.html")
+        return render_template("printer_detail.html", printer={
+            "id": 1,
+            "name": "Prusa Mini",
+            "files": [
+                {"name": "file1.gcode", "status": "Finished"},
+                {"name": "file2.gcode", "status": "In Progress"},
+            ]
+        })
     elif printer_id == 2:
-        return send_from_directory(app.static_folder, "printer2.html")
+        return render_template("printer_detail.html", printer={
+            "id": 2,
+            "name": "Prusa MK3S+",
+            "files": [
+                {"name": "file3.gcode", "status": "Finished"},
+                {"name": "file4.gcode", "status": "Queued"},
+            ]
+        })
     abort(404)
 
 @app.route("/printers")
