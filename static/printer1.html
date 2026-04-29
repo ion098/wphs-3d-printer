@@ -15,6 +15,8 @@
             <div>
                 <p><strong>Printer Number:</strong> 1</p>
                 <p><strong>Status:</strong> Running</p>
+                <p><strong>Nozzle Temperature:</strong> <span id="temp-value">--</span> C</p>
+                <p id="temp-updated">Waiting for live data...</p>
                 <h2>Queue</h2>
                 <ul>
                     <li>Alice</li>
@@ -26,6 +28,29 @@
         </section>
         <a class="button" href="/printers.html">Back to printers</a>
     </main>
+    <script>
+        const tempValue = document.getElementById("temp-value");
+        const tempUpdated = document.getElementById("temp-updated");
+        const stream = new EventSource("/api/printer/1/temperature/stream");
+
+        stream.onmessage = (event) => {
+            const payload = JSON.parse(event.data);
+            if (typeof payload.temperature_c === "number") {
+                tempValue.textContent = payload.temperature_c.toFixed(1);
+                tempUpdated.textContent = `Last updated: ${new Date(payload.timestamp * 1000).toLocaleTimeString()}`;
+            } else if (payload.error) {
+                tempValue.textContent = "--";
+                tempUpdated.textContent = `Unable to read temperature: ${payload.error}`;
+            } else {
+                tempValue.textContent = "--";
+                tempUpdated.textContent = "No temperature field in API response";
+            }
+        };
+
+        stream.onerror = () => {
+            tempUpdated.textContent = "Temperature stream disconnected. Retrying...";
+        };
+    </script>
 </body>
 
 </html>
