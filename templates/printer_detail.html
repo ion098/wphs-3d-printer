@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Printer Details{% endblock %}
+
+{% block content %}
+    <h1>Printer {{ printer.id }} - {{ printer.name }}</h1>
+    <section class="two-column">
+        <div>
+            <h2>Files</h2>
+            {% for file in printer.files %}
+                <div class="card">
+                    File: {{ file.name }}<br>
+                    Status: {{ file.status }}
+                </div>
+            {% endfor %}
+        
+            <form onsubmit="return false;">
+                <label for="file_picker">Select file to upload: </label>
+                <input type="file" id="file_picker" name="file_picker">
+                <button type="submit" accept=".gcode,.bgcode">Upload file</button>
+            </form>
+            
+            <button id="set-printer-status">Start printer</button>
+        </div>
+        <img src="{{ printer.camera_url | default('https://placecats.com/300/200') }}" />
+    </section>
+{% endblock %}
