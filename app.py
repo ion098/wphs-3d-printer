@@ -1,3 +1,5 @@
+import queue
+
 from flask import Flask, send_from_directory, render_template, abort, Response
 import json
 import os
@@ -5,6 +7,9 @@ import time
 import urllib.error
 import urllib.request
 from dotenv import load_dotenv
+import flask
+
+from printer import ThreeDPrinter
 
 app = Flask(__name__, static_folder='static', static_url_path='/')
 
@@ -19,12 +24,35 @@ POLL_SECONDS = 2
 REQUEST_TIMEOUT_SECONDS = 8
 MAX_BACKOFF_SECONDS = 15
 
+printers_list = [
+    ThreeDPrinter(name="Prusa Mini", url="http://", password=""),
+    ThreeDPrinter(name="Prusa MK3S+", url="http://", password=""),
+]
+
+for printer in printers_list:
+    printer.start()
+
 @app.route("/")
 def home_page():
     return send_from_directory(app.static_folder, "index.html")
 
 @app.route("/printer_<int:printer_id>.html")
 def printer_detail(printer_id):
+    try:
+        curr_printer = printers_list[printer_id - 1]  # Assuming printer IDs start at 1 and are sequential
+        return render_template("printer_detail.html", printer_details={
+            "id": printer_id,
+            "name": curr_printer.name,
+            "files": [
+                {"name": "file1.gcode", "status": "Finished"},
+                {"name": "file2.gcode", "status": "In Progress"},
+            ]
+        })
+    except IndexError:
+        abort(404)
+
+    
+    '''
     if printer_id == 1:
         return render_template("printer_detail.html", printer={
             "id": 1,
@@ -43,6 +71,7 @@ def printer_detail(printer_id):
                 {"name": "file4.gcode", "status": "Queued"},
             ]
         })
+    '''
     abort(404)
 
 
@@ -103,7 +132,29 @@ def temperature_events(printer_id):
 
 
 @app.route("/api/printer/<int:printer_id>/temperature/stream")
-def printer_temperature_stream(printer_id):
+def printer_temperature_stream(printer_id: int):
+    try:
+        curr_printer = printers_list[printer_id - 1]  # Assuming printer IDs start at 1 and are sequential
+        info_queue: queue.Queue[str] = queue.Queue()
+        curr_printer.info_subscribers.add(info_queue)
+
+        @flask.stream_with_context
+        def temperature_events():
+            while True:
+                yield info_queue.get()
+
+        return Response(
+            temperature_events(),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+    except IndexError:
+        abort(404)
+    '''
     if printer_id not in VALID_PRINTER_IDS:
         abort(404)
     return Response(
@@ -115,6 +166,7 @@ def printer_temperature_stream(printer_id):
             "X-Accel-Buffering": "no",
         },
     )
+    '''
 
 @app.route("/printers")
 def printers_page():

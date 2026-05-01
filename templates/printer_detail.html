@@ -3,11 +3,11 @@
 {% block title %}Printer Details{% endblock %}
 
 {% block content %}
-    <h1>Printer {{ printer.id }} - {{ printer.name }}</h1>
+    <h1>Printer {{ printer_details.id }} - {{ printer_details.name }}</h1>
     <section class="two-column">
         <div>
             <h2>Files</h2>
-            {% for file in printer.files %}
+            {% for file in printer_details.files %}
                 <div class="card">
                     File: {{ file.name }}<br>
                     Status: {{ file.status }}
@@ -22,6 +22,6 @@
             
             <button id="set-printer-status">Start printer</button>
         </div>
-        <img src="{{ printer.camera_url | default('https://placecats.com/300/200') }}" />
+        <img src="{{ printer_details.camera_url | default('https://placecats.com/300/200') }}" />
     </section>
 {% endblock %}
