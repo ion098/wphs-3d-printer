@@ -31,16 +31,14 @@
     <script>
         const tempValue = document.getElementById("temp-value");
         const tempUpdated = document.getElementById("temp-updated");
-        const stream = new EventSource("/api/printer/2/temperature/stream");
+        const stream = new EventSource("/api/printer/2/info_stream");
 
         stream.onmessage = (event) => {
             const payload = JSON.parse(event.data);
-            if (typeof payload.temperature_c === "number") {
-                tempValue.textContent = payload.temperature_c.toFixed(1);
-                tempUpdated.textContent = `Last updated: ${new Date(payload.timestamp * 1000).toLocaleTimeString()}`;
-            } else if (payload.error) {
-                tempValue.textContent = "--";
-                tempUpdated.textContent = `Unable to read temperature: ${payload.error}`;
+            const nozzle_temp = payload?.printer?.temp_nozzle;
+            if (typeof nozzle_temp === "number") {
+                tempValue.textContent = nozzle_temp.toFixed(1);
+                tempUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
             } else {
                 tempValue.textContent = "--";
                 tempUpdated.textContent = "No temperature field in API response";
