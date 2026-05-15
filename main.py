@@ -5,9 +5,10 @@ import threading
 import logging
 import tomllib
 import queue
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated
+from av.container import InputContainer
+from pydantic import BaseModel, Field
 
 # Configure logging
 logging.basicConfig(
@@ -17,32 +18,40 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_config(config_file: str = "config.toml") -> dict[str, Any]:
-    """Load configuration from TOML file."""
+class CameraConfig(BaseModel):
+    """Configuration for a single camera."""
+    number: int = Field(..., ge=0, description="Camera device number")
+    token: str = Field(..., min_length=1, description="Prusa Connect API token")
+    fingerprint: str = Field(..., min_length=1, description="Camera fingerprint")
+
+
+class AppConfig(BaseModel):
+    """Application configuration."""
+    cameras: Annotated[list[CameraConfig], Field(description="List of cameras")] = []
+
+
+def load_config(config_file: str = "config.toml") -> AppConfig:
+    """Load and validate configuration from TOML file."""
     config_path = Path(config_file)
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_file}")
     with open(config_path, "rb") as f:
-        config = tomllib.load(f)
-    return config
+        config_dict = tomllib.load(f)
+    return AppConfig(**config_dict)
 
 
-@dataclass
 class Camera:
-    number: int
-    token: str
-    fingerprint: str
-    _container: Any = None  # av.InputContainer, lacks proper type stubs
-    _decode_thread: threading.Thread | None = None
-    _upload_thread: threading.Thread | None = None
-    _frame_queue: queue.Queue[bytes] | None = None
-    _stop_event: threading.Event | None = None
+    """Manages a single camera stream and upload to Prusa Connect."""
     
-    def __post_init__(self) -> None:
-        self._stop_event = threading.Event()
-        self._frame_queue = queue.Queue[bytes](maxsize=1)  # Only keep the latest frame
-        if not self.token or not self.fingerprint:
-            raise ValueError(f"Camera {self.number}: token and fingerprint must be configured")
+    def __init__(self, config: CameraConfig) -> None:
+        self.number = config.number
+        self.token = config.token
+        self.fingerprint = config.fingerprint
+        self._container: InputContainer | None = None
+        self._decode_thread: threading.Thread | None = None
+        self._upload_thread: threading.Thread | None = None
+        self._frame_queue: queue.Queue[bytes] = queue.Queue(maxsize=1)
+        self._stop_event: threading.Event = threading.Event()
     
     def start(self) -> None:
         """Start the camera stream in background threads."""
@@ -90,7 +99,7 @@ class Camera:
         
         if self._container:
             try:
-                self._container.close()  # type: ignore
+                self._container.close()
             except Exception as e:
                 logger.warning(f"Error closing container for camera {self.number}: {e}")
             logger.info(f"Closed video device {self.number}")
@@ -102,23 +111,17 @@ class Camera:
             return
         
         try:
-            for packet in self._container.demux():  # type: ignore
-                assert self._stop_event is not None
+            for packet in self._container.demux():
                 if self._stop_event.is_set():
                     break
                 
                 try:
                     img_data = bytes(packet)  # type: ignore
-                    # Put frame in queue, dropping old frame if queue is full
-                    assert self._frame_queue is not None
+                    # Put frame in queue, replacing old frame if full
                     try:
                         self._frame_queue.put_nowait(img_data)
                     except queue.Full:
-                        # Queue is full, discard old frame and put new one
-                        try:
-                            self._frame_queue.get_nowait()
-                        except queue.Empty:
-                            pass
+                        self._frame_queue.get_nowait()
                         self._frame_queue.put_nowait(img_data)
                 except Exception as e:
                     logger.error(f"Error decoding packet from camera {self.number}: {e}", exc_info=True)
@@ -130,32 +133,11 @@ class Camera:
     def _upload_thread_fn(self) -> None:
         """Continuously upload frames to Prusa Connect."""
         try:
-            assert self._stop_event is not None
             while not self._stop_event.is_set():
                 try:
-                    # Wait for a frame with timeout to allow checking stop_event
-                    assert self._frame_queue is not None
                     img_data = self._frame_queue.get(timeout=1)
-                    
-                    try:
-                        headers = {
-                            "Content-Type": "image/jpg",
-                            "Token": self.token,
-                            "Fingerprint": self.fingerprint,
-                        }
-                        response = requests.put(
-                            "https://connect.prusa3d.com/c/snapshot",
-                            headers=headers,
-                            data=img_data,
-                            timeout=10
-                        )
-                        response.raise_for_status()
-                    except requests.RequestException as e:
-                        logger.error(f"Failed to upload frame from camera {self.number}: {e}")
-                    except Exception as e:
-                        logger.error(f"Error uploading frame from camera {self.number}: {e}", exc_info=True)
+                    self._upload_frame(img_data)
                 except queue.Empty:
-                    # No frame available, continue waiting
                     continue
                 except Exception as e:
                     logger.error(f"Upload thread error for camera {self.number}: {e}", exc_info=True)
@@ -163,6 +145,24 @@ class Camera:
             logger.error(f"Upload thread crashed for camera {self.number}: {e}", exc_info=True)
         finally:
             logger.info(f"Upload thread ending for camera {self.number}")
+    
+    def _upload_frame(self, img_data: bytes) -> None:
+        """Upload a single frame to Prusa Connect."""
+        headers = {
+            "Content-Type": "image/jpg",
+            "Token": self.token,
+            "Fingerprint": self.fingerprint,
+        }
+        try:
+            response = requests.put(
+                "https://connect.prusa3d.com/c/snapshot",
+                headers=headers,
+                data=img_data,
+                timeout=10
+            )
+            response.raise_for_status()
+        except requests.RequestException as e:
+            logger.error(f"Failed to upload frame from camera {self.number}: {e}")
 
 
 def main() -> None:
@@ -171,22 +171,11 @@ def main() -> None:
         config = load_config()
         logger.info("Configuration loaded")
         
-        cameras: list[Camera] = []
-        cam_configs: Any = config.get("cameras", [])
-        for cam_config in cam_configs:  # type: ignore
-            try:
-                camera = Camera(
-                    number=cam_config["number"],  # type: ignore
-                    token=cam_config["token"],  # type: ignore
-                    fingerprint=cam_config["fingerprint"],  # type: ignore
-                )
-                cameras.append(camera)
-            except (KeyError, ValueError) as e:
-                logger.error(f"Invalid camera configuration: {e}")
-        
-        if not cameras:
+        if not config.cameras:
             logger.warning("No cameras configured")
             return
+        
+        cameras = [Camera(cam_config) for cam_config in config.cameras]
         
         # Start all cameras
         for camera in cameras:
