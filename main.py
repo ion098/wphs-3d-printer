@@ -58,7 +58,10 @@ class Camera:
         try:
             self._container = av.open(
                 f'/dev/video{self.number}',
-                format='mjpeg'
+                format='v4l2',
+                options={
+                    'input_format': 'mjpeg'
+                }
             )
             logger.info(f"Opened video device {self.number}")
             
