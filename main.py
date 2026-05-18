@@ -168,12 +168,18 @@ class Camera:
 
                 if response.status_code == 429:
                     retry_after = response.headers.get("Retry-After")
-                    backoff = 2 ** (attempt - 1)
-                    wait_time = backoff
+                    wait_time = 2 ** (attempt - 1)
 
                     if retry_after is not None:
                         try:
-                            wait_time = max(0, int(retry_after))
+                            retry_after_seconds = int(retry_after)
+                            if retry_after_seconds < 0:
+                                logger.warning(
+                                    f"Negative Retry-After header for camera {self.number}: "
+                                    f"{retry_after!r}. Falling back to exponential backoff."
+                                )
+                            else:
+                                wait_time = retry_after_seconds
                         except ValueError:
                             logger.warning(
                                 f"Invalid Retry-After header for camera {self.number}: "
