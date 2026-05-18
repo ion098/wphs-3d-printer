@@ -156,16 +156,61 @@ class Camera:
             "Token": self.token,
             "Fingerprint": self.fingerprint,
         }
-        try:
-            response = requests.put(
-                "https://connect.prusa3d.com/c/snapshot",
-                headers=headers,
-                data=img_data,
-                timeout=10
-            )
-            response.raise_for_status()
-        except requests.RequestException as e:
-            logger.error(f"Failed to upload frame from camera {self.number}: {e}")
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = requests.put(
+                    "https://connect.prusa3d.com/c/snapshot",
+                    headers=headers,
+                    data=img_data,
+                    timeout=10
+                )
+
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    backoff = 2 ** (attempt - 1)
+                    wait_time = backoff
+
+                    if retry_after is not None:
+                        try:
+                            wait_time = max(0, int(retry_after))
+                        except ValueError:
+                            logger.warning(
+                                f"Invalid Retry-After header for camera {self.number}: "
+                                f"{retry_after!r}. Falling back to exponential backoff."
+                            )
+
+                    if attempt == max_attempts:
+                        logger.error(
+                            f"Failed to upload frame from camera {self.number} after "
+                            f"{max_attempts} attempts due to HTTP 429 responses."
+                        )
+                        return
+
+                    logger.warning(
+                        f"Received HTTP 429 while uploading frame from camera {self.number}. "
+                        f"Retrying in {wait_time} seconds "
+                        f"(attempt {attempt}/{max_attempts})."
+                    )
+                    time.sleep(wait_time)
+                    continue
+
+                response.raise_for_status()
+                return
+            except requests.RequestException as e:
+                if attempt == max_attempts:
+                    logger.error(
+                        f"Failed to upload frame from camera {self.number} after "
+                        f"{max_attempts} attempts: {e}"
+                    )
+                    return
+
+                wait_time = 2 ** (attempt - 1)
+                logger.warning(
+                    f"Upload attempt {attempt}/{max_attempts} failed for camera "
+                    f"{self.number}: {e}. Retrying in {wait_time} seconds."
+                )
+                time.sleep(wait_time)
 
 
 def main() -> None:
