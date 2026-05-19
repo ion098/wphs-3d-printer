@@ -156,16 +156,23 @@ class Camera:
             "Token": self.token,
             "Fingerprint": self.fingerprint,
         }
-        try:
-            response = requests.put(
-                "https://connect.prusa3d.com/c/snapshot",
-                headers=headers,
-                data=img_data,
-                timeout=10
-            )
-            response.raise_for_status()
-        except requests.RequestException as e:
-            logger.error(f"Failed to upload frame from camera {self.number}: {e}")
+        for i in range(5):
+            try:
+                response = requests.put(
+                    "https://connect.prusa3d.com/c/snapshot",
+                    headers=headers,
+                    data=img_data,
+                    timeout=100
+                )
+                response.raise_for_status()
+                logger.info("Uploaded frame!")
+                break
+            except requests.RequestException as e:
+                logger.error(f"Failed to upload frame from camera {self.number}: {e}")
+                for j in range(3 ** i + 1):
+                    if self._stop_event.is_set():
+                        return
+                    time.sleep(1)
 
 
 def main() -> None:
