@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='\x1b[7m%(asctime)s\x1b[0m - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,6 @@ class CameraConfig(BaseModel):
     """Configuration for a single camera."""
     number: int = Field(..., ge=0, description="Camera device number")
     token: str = Field(..., min_length=1, description="Prusa Connect API token")
-    fingerprint: str = Field(..., min_length=1, description="Camera fingerprint")
 
 
 class AppConfig(BaseModel):
@@ -46,7 +45,6 @@ class Camera:
     def __init__(self, config: CameraConfig) -> None:
         self.number = config.number
         self.token = config.token
-        self.fingerprint = config.fingerprint
         self._container: InputContainer | None = None
         self._decode_thread: threading.Thread | None = None
         self._upload_thread: threading.Thread | None = None
@@ -154,7 +152,7 @@ class Camera:
         headers = {
             "Content-Type": "image/jpg",
             "Token": self.token,
-            "Fingerprint": self.fingerprint,
+            "Fingerprint": self.token,
         }
         for i in range(5):
             try:
@@ -165,11 +163,12 @@ class Camera:
                     timeout=100
                 )
                 response.raise_for_status()
-                logger.info("Uploaded frame!")
+                logger.info("\x1b[32mUploaded frame!\x1b[0m")
+                time.sleep(1)
                 break
             except requests.RequestException as e:
-                logger.error(f"Failed to upload frame from camera {self.number}: {e}")
-                for j in range(3 ** i + 1):
+                logger.error(f"\x1b[33mFailed to upload frame from camera {self.number}: {e}\x1b[0m")
+                for j in range(2 ** i):
                     if self._stop_event.is_set():
                         return
                     time.sleep(1)
