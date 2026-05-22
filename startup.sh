@@ -4,13 +4,20 @@ PID=0
 
 cd "~/Desktop/wphs-3d-printer"
 
-TERMINAL="lxterminal --title=3D-Printer -e"
+TERMINAL="lxterminal --title=3D-Printer -e bash -c"
 
 cleanup() {
+    echo "$(date): Shutting down orchestrator and cleaning up GUI windows..."
+    
     if [ "$PID" -ne 0 ]; then
-        echo "$(date): Shutting down terminal..."
-        kill "$PID" 2>/dev/null
+        # 1. Kill the specific terminal process group
+        kill -TERM -"$PID" 2>/dev/null
     fi
+    
+    # 2. Safety net: Kill any remaining 'uv run' or 'python3 main.py' 
+    # running out of your specific project directory
+    pkill -f "$PROJECT_DIR" 2>/dev/null
+    
     exit 0
 }
 trap cleanup SIGINT SIGTERM
@@ -19,7 +26,7 @@ while true; do
     # 1. Start uv inside a new GUI terminal window if not running
     if [ "$PID" -eq 0 ] || ! kill -0 "$PID" 2>/dev/null; then
         echo "$(date): Launching app in GUI terminal..."
-        $TERMINAL uv run python3 main.py &
+        $TERMINAL_CMD "uv run python3 main.py" &
         PID=$!
     fi
 
